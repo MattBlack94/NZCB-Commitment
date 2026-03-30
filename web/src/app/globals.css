@@ -1,0 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #f3f3f3;
+  --foreground: #373737;
+  --primary-green: #3c886c;
+  --dark-navy: #1d4354;
+  --bright-green: #6fda44;
+  --light-gray: #f3f3f3;
+  --dark-gray: #373737;
+  --medium-gray: #3f3f3f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary-green: var(--primary-green);
+  --color-dark-navy: var(--dark-navy);
+  --color-bright-green: var(--bright-green);
+  --color-light-gray: var(--light-gray);
+  --color-dark-gray: var(--dark-gray);
+  --color-medium-gray: var(--medium-gray);
+  --font-nunito: 'Nunito', sans-serif;
+}
+
+* {
+  border-radius: 0 !important;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Nunito', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+}
+
+/* Custom scrollbar for form */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Number input without spinner */
+input[type="number"].no-spinner::-webkit-outer-spin-button,
+input[type="number"].no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"].no-spinner {
+  -moz-appearance: textfield;
+}
+
+/* WorldGBC card shadow */
+.wgbc-shadow {
+  box-shadow: 6px 6px 9px rgba(0,0,0,0.2);
+}
