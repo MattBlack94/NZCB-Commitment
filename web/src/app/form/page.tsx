@@ -11,6 +11,7 @@ import {
   Send,
   AlertCircle,
   CheckCircle2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { signatories } from "@/data/signatories";
 import { formSchema, FormData, defaultFormValues } from "@/lib/schema";
@@ -26,12 +27,16 @@ function FormContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const signatoryId = searchParams.get("signatoryId");
+  const source = searchParams.get("source");
+  const isUpload = source === "upload";
 
   const signatory = signatories.find((s) => s.id === signatoryId);
 
   const [currentStep, setCurrentStep] = useState(1);
   const [draftSaved, setDraftSaved] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [uploadBannerVisible, setUploadBannerVisible] = useState(isUpload);
+  const [uploadEntityName, setUploadEntityName] = useState("");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const form = useForm<FormData>({
@@ -50,11 +55,16 @@ function FormContent() {
   );
   const showEmbodiedCarbon =
     commitmentVersion === "2021" && hasNewDevelopment;
-  const showEP100 = signatory?.ep100 === true;
 
-  // Pre-populate signatory data
+  // For upload mode, check if EP100 is in the climate initiatives
+  const watchedInitiatives = watch("climateInitiatives") || [];
+  const showEP100 = isUpload
+    ? watchedInitiatives.includes("EP100")
+    : signatory?.ep100 === true;
+
+  // Pre-populate signatory data (signatory search flow)
   useEffect(() => {
-    if (!signatory) return;
+    if (!signatory || isUpload) return;
     setValue("entityName", signatory.name);
     setValue("signatoryId", signatory.id);
     setValue("yearJoined", signatory.yearJoined);
@@ -66,11 +76,31 @@ function FormContent() {
     if (signatory.raceToZero) initiatives.push("Race to Zero");
     if (signatory.climatePledge) initiatives.push("The Climate Pledge");
     setValue("climateInitiatives", initiatives);
-  }, [signatory, setValue]);
+  }, [signatory, isUpload, setValue]);
 
-  // Load draft from localStorage
+  // Load data from uploaded Excel file
   useEffect(() => {
-    if (!signatoryId) return;
+    if (!isUpload) return;
+    const stored = localStorage.getItem("nzcb-upload-data");
+    if (!stored) return;
+    try {
+      const parsed = JSON.parse(stored);
+      Object.entries(parsed).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          setValue(key as keyof FormData, value as FormData[keyof FormData]);
+        }
+      });
+      if (parsed.entityName) {
+        setUploadEntityName(parsed.entityName);
+      }
+    } catch {
+      // ignore invalid stored data
+    }
+  }, [isUpload, setValue]);
+
+  // Load draft from localStorage (signatory search flow)
+  useEffect(() => {
+    if (!signatoryId || isUpload) return;
     const draftKey = `nzcb-draft-${signatoryId}`;
     const saved = localStorage.getItem(draftKey);
     if (saved) {
@@ -83,16 +113,19 @@ function FormContent() {
         // ignore invalid drafts
       }
     }
-  }, [signatoryId, setValue]);
+  }, [signatoryId, isUpload, setValue]);
 
   const saveDraft = useCallback(() => {
-    if (!signatoryId) return;
-    const draftKey = `nzcb-draft-${signatoryId}`;
+    // For upload mode, use a generic draft key or entity-name-based key
+    const draftKey = isUpload
+      ? `nzcb-draft-upload-${uploadEntityName || "unnamed"}`
+      : `nzcb-draft-${signatoryId}`;
+    if (!isUpload && !signatoryId) return;
     const data = form.getValues();
     localStorage.setItem(draftKey, JSON.stringify(data));
     setDraftSaved(true);
     setTimeout(() => setDraftSaved(false), 2000);
-  }, [signatoryId, form]);
+  }, [signatoryId, isUpload, uploadEntityName, form]);
 
   const onSubmit = (data: FormData) => {
     console.log("Form submitted:", data);
@@ -130,7 +163,7 @@ function FormContent() {
     if (prev >= 1) setCurrentStep(prev);
   };
 
-  if (!signatory) {
+  if (!signatory && !isUpload) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <AlertCircle size={48} className="mx-auto text-amber-500 mb-4" />
@@ -151,6 +184,9 @@ function FormContent() {
   }
 
   if (submitted) {
+    const displayName = isUpload
+      ? uploadEntityName || "your organisation"
+      : signatory?.name || "your organisation";
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <div className="inline-flex items-center justify-center w-20 h-20 bg-[#6fda44]/10 mb-6">
@@ -160,7 +196,7 @@ function FormContent() {
           Submission Complete
         </h2>
         <p className="text-[#373737] mb-2">
-          Thank you, <strong>{signatory.name}</strong>. Your NZCB Commitment
+          Thank you, <strong>{displayName}</strong>. Your NZCB Commitment
           report has been submitted successfully.
         </p>
         <p className="text-sm text-gray-500 mb-8">
@@ -191,31 +227,74 @@ function FormContent() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      {/* Signatory banner */}
-      <div className="bg-white border border-gray-200 p-3 mb-6 flex items-center justify-between shadow-[6px_6px_9px_rgba(0,0,0,0.2)]">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#3c886c]/10 flex items-center justify-center">
-            <span className="text-sm font-bold text-[#3c886c]">
-              {signatory.name.charAt(0)}
-            </span>
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-[#1d4354]">
-              {signatory.name}
-            </p>
-            <p className="text-xs text-gray-500">
-              {signatory.country} &middot; v{signatory.commitmentVersion} &middot;{" "}
-              {signatory.businessType}
+      {/* Upload data banner */}
+      {isUpload && uploadBannerVisible && (
+        <div className="bg-[#3c886c]/5 border border-[#3c886c]/30 p-3 mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileSpreadsheet size={16} className="text-[#3c886c] flex-shrink-0" />
+            <p className="text-xs text-[#1d4354]">
+              <span className="font-semibold">Data loaded from uploaded Excel file.</span>{" "}
+              Please review all fields carefully and fill in any missing information.
             </p>
           </div>
+          <button
+            onClick={() => setUploadBannerVisible(false)}
+            className="text-xs text-gray-400 hover:text-gray-600 ml-4 flex-shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
-        <button
-          onClick={() => router.push("/")}
-          className="text-xs text-[#3c886c] hover:text-[#1d4354] underline font-medium"
-        >
-          Change
-        </button>
-      </div>
+      )}
+
+      {/* Signatory / Upload banner */}
+      {isUpload ? (
+        <div className="bg-white border border-gray-200 p-3 mb-6 flex items-center justify-between shadow-[6px_6px_9px_rgba(0,0,0,0.2)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[#3c886c]/10 flex items-center justify-center">
+              <FileSpreadsheet size={16} className="text-[#3c886c]" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#1d4354]">
+                {uploadEntityName || "Uploaded Form Data"}
+              </p>
+              <p className="text-xs text-gray-500">
+                Pre-populated from Excel upload
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => router.push("/")}
+            className="text-xs text-[#3c886c] hover:text-[#1d4354] underline font-medium"
+          >
+            Start Over
+          </button>
+        </div>
+      ) : signatory ? (
+        <div className="bg-white border border-gray-200 p-3 mb-6 flex items-center justify-between shadow-[6px_6px_9px_rgba(0,0,0,0.2)]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[#3c886c]/10 flex items-center justify-center">
+              <span className="text-sm font-bold text-[#3c886c]">
+                {signatory.name.charAt(0)}
+              </span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-[#1d4354]">
+                {signatory.name}
+              </p>
+              <p className="text-xs text-gray-500">
+                {signatory.country} &middot; v{signatory.commitmentVersion} &middot;{" "}
+                {signatory.businessType}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => router.push("/")}
+            className="text-xs text-[#3c886c] hover:text-[#1d4354] underline font-medium"
+          >
+            Change
+          </button>
+        </div>
+      ) : null}
 
       {/* Step indicator */}
       <StepIndicator

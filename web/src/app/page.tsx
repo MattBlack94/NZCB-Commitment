@@ -1,15 +1,87 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { signatories } from "@/data/signatories";
-import { Search, Building2, ArrowRight, CheckCircle2, Globe } from "lucide-react";
+import { parseExcelFile, ParseResult } from "@/lib/excelParser";
+import {
+  Search,
+  Building2,
+  ArrowRight,
+  CheckCircle2,
+  Globe,
+  Upload,
+  FileSpreadsheet,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadState, setUploadState] = useState<
+    "idle" | "parsing" | "success" | "error"
+  >("idle");
+  const [uploadResult, setUploadResult] = useState<ParseResult | null>(null);
+  const [uploadError, setUploadError] = useState<string>("");
+  const [uploadFileName, setUploadFileName] = useState<string>("");
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadFileName(file.name);
+    setUploadState("parsing");
+    setUploadResult(null);
+    setUploadError("");
+
+    try {
+      const result = await parseExcelFile(file);
+
+      if (result.format === "unknown") {
+        setUploadState("error");
+        setUploadError(
+          "This file does not appear to be a valid NZCB reporting form. Please upload a file based on the simplified template or the original WorldGBC form."
+        );
+        return;
+      }
+
+      if (result.fieldsPopulated === 0) {
+        setUploadState("error");
+        setUploadError(
+          "The file was recognised but no data could be extracted. It may be an empty template."
+        );
+        return;
+      }
+
+      setUploadResult(result);
+      setUploadState("success");
+
+      // Store parsed data in localStorage
+      localStorage.setItem("nzcb-upload-data", JSON.stringify(result.data));
+    } catch (err) {
+      setUploadState("error");
+      setUploadError(
+        err instanceof Error
+          ? `Error parsing file: ${err.message}`
+          : "An unexpected error occurred while parsing the file."
+      );
+    }
+
+    // Reset file input so the same file can be re-uploaded
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleUploadContinue = () => {
+    router.push("/form?source=upload");
+  };
 
   const filtered = useMemo(() => {
     if (!search.trim()) return signatories;
@@ -177,6 +249,135 @@ export default function Home() {
             }`}
           >
             Begin Reporting
+            <ArrowRight size={16} />
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="flex items-center gap-4 mt-8 mb-8">
+          <div className="flex-1 h-px bg-gray-200" />
+          <span className="text-sm text-gray-400 font-medium">OR</span>
+          <div className="flex-1 h-px bg-gray-200" />
+        </div>
+
+        {/* Upload card */}
+        <div className="bg-white shadow-[6px_6px_9px_rgba(0,0,0,0.2)] border border-gray-200 p-6">
+          <label className="block text-sm font-semibold text-[#1d4354] mb-2">
+            Upload a Completed Excel File
+          </label>
+          <p className="text-xs text-gray-500 mb-4">
+            Upload a filled-in Excel reporting form (.xlsx or .xlsm) to
+            pre-populate the web form. Supports both the simplified template and
+            the original WorldGBC form.
+          </p>
+
+          {/* File input area */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className={`relative border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
+              uploadState === "parsing"
+                ? "border-gray-300 bg-gray-50 cursor-wait"
+                : uploadState === "success"
+                  ? "border-[#3c886c] bg-[#3c886c]/5"
+                  : uploadState === "error"
+                    ? "border-red-300 bg-red-50"
+                    : "border-gray-300 hover:border-[#3c886c] hover:bg-[#3c886c]/5"
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xlsm"
+              onChange={handleFileUpload}
+              className="hidden"
+              disabled={uploadState === "parsing"}
+            />
+
+            {uploadState === "idle" && (
+              <>
+                <Upload
+                  size={28}
+                  className="mx-auto text-gray-400 mb-2"
+                />
+                <p className="text-sm text-[#373737]">
+                  Click to select a file or drag and drop
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  .xlsx or .xlsm files only
+                </p>
+              </>
+            )}
+
+            {uploadState === "parsing" && (
+              <>
+                <Loader2
+                  size={28}
+                  className="mx-auto text-[#3c886c] mb-2 animate-spin"
+                />
+                <p className="text-sm text-[#373737]">
+                  Parsing {uploadFileName}...
+                </p>
+              </>
+            )}
+
+            {uploadState === "error" && (
+              <>
+                <AlertCircle
+                  size={28}
+                  className="mx-auto text-red-500 mb-2"
+                />
+                <p className="text-sm text-red-700 mb-1">{uploadError}</p>
+                <p className="text-xs text-gray-500">
+                  Click to try a different file
+                </p>
+              </>
+            )}
+
+            {uploadState === "success" && uploadResult && (
+              <>
+                <FileSpreadsheet
+                  size={28}
+                  className="mx-auto text-[#3c886c] mb-2"
+                />
+                <p className="text-sm font-medium text-[#1d4354] mb-1">
+                  {uploadFileName}
+                </p>
+                <p className="text-xs text-[#3c886c]">
+                  Format{" "}
+                  {uploadResult.format === "B"
+                    ? "detected: Simplified Template"
+                    : "detected: Original WorldGBC Form"}{" "}
+                  &middot; {uploadResult.fieldsPopulated} field
+                  {uploadResult.fieldsPopulated !== 1 ? "s" : ""} populated
+                </p>
+                {uploadResult.warnings.length > 0 && (
+                  <div className="mt-2">
+                    {uploadResult.warnings.map((w, i) => (
+                      <p key={i} className="text-xs text-amber-600">
+                        {w}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-2">
+                  Click to upload a different file
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* Continue button */}
+          <button
+            type="button"
+            onClick={handleUploadContinue}
+            disabled={uploadState !== "success"}
+            className={`mt-4 w-full flex items-center justify-center gap-2 py-3 font-semibold text-sm transition-all ${
+              uploadState === "success"
+                ? "bg-[#3c886c] text-white hover:bg-white hover:text-[#3c886c] border-2 border-[#3c886c] shadow-md hover:shadow-lg"
+                : "bg-gray-300 text-gray-500 cursor-not-allowed border-2 border-gray-300"
+            }`}
+          >
+            Continue with Uploaded Data
             <ArrowRight size={16} />
           </button>
         </div>
